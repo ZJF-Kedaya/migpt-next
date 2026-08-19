@@ -25,11 +25,10 @@ export default {
   async onMessage(engine, msg) {
     console.log(`🎤 [收到语音]: "${msg.text}"`);
 
-    // 1. 专属测试指令：用于验证 L05C 的 MIoT TTS 通道是否彻底打通
+    // 1. 专属测试指令
     if (msg.text === '测试播放文字') {
       console.log("🔊 [测试 TTS] 尝试使用 MIoT 底层指令播放...");
       try {
-        // L05C 正确的 TTS 指令: SIID 5, AIID 3 (play-text)
         await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！');
         console.log("✅ TTS 指令发送成功");
       } catch (e) {
@@ -43,17 +42,18 @@ export default {
     if (shouldAskAI) {
       console.log(`🤖 [触发 AI] 正在请求大模型...`);
       try {
-        // 2. 【第一次底层打断】立即强制停止当前播放 (SIID 3, AIID 4: stop)，掐断小爱的初始反应
+        // 2. 【立刻打断】强制停止当前任何播放，防止小爱抢答兜底回复 (SIID 3, AIID 4: stop)
         await engine.MiOT.doAction(3, 4).catch(() => {});
         
-        // 3. 请求大模型 (这里会有 2-4 秒的网络延迟)
+        // 3. 【抢占通道 + 体验优化】立刻播放“请稍等”，掩盖大模型延迟，并彻底占用音频通道
+        console.log("⏳ [抢占通道] 播放请稍候提示...");
+        await engine.MiOT.doAction(5, 3, "请稍等，我正在思考");
+        
+        // 4. 请求大模型 (此时音箱正在说“请稍等”，用户不会觉得卡顿，小爱也不会抢答)
         const { text: aiText } = await engine.askAI(msg);
         console.log(`🔊 [AI 生成回复]: ${aiText}`);
         
-        // 4. 【第二次底层打断】防止在等待 AI 期间，小爱开始了兜底回复
-        await engine.MiOT.doAction(3, 4).catch(() => {});
-        
-        // 5. 【核心修复】使用 L05C 专属的 TTS 指令播放 AI 文本 (SIID 5, AIID 3: play-text)
+        // 5. 【播放最终结果】直接衔接播放 AI 的回复
         await engine.MiOT.doAction(5, 3, aiText);
         console.log("✅ AI 语音播放指令已发送");
         
