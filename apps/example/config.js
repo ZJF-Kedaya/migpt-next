@@ -27,7 +27,7 @@ export default {
      *
      * 获取教程：https://github.com/idootop/migpt-next/issues/4
      */
-    passToken: 'xxxxxxxxx',
+    passToken: process.env.MI_PASSTOKEN,
   },
   openai: {
     /**
