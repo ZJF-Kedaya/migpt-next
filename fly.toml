@@ -1,0 +1,10 @@
+app = "migpt-next-app"
+primary_region = "hkg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+# 该项目为后台常驻进程，无需对外暴露 HTTP 端口，因此不配置 services
