@@ -2,56 +2,103 @@
  * @type {import('@mi-gpt/next').MiGPTConfig}
  */
 export default {
-  debug: false, // ⚠️ 设为 false，屏蔽冗长的底层设备列表日志
+  debug: false, // 是否开启调试模式
   speaker: {
-    did: process.env.MI_DID || '小爱音箱Play增强版',
+    /**
+     * 小爱音箱在米家中设置的名称
+     *
+     * 如果提示找不到设备，请打开调试模式获取设备真实的 name、miotDID 或 mac 地址填入
+     */
+    did: '小爱音箱Play增强版',
+    /**
+     * 小米 ID（一串数字）
+     *
+     * 注意：不是手机号或邮箱，请在小米账号「个人信息」-「小米 ID」查看
+     */
     userId: process.env.MI_USER_ID,
+    /**
+     * 小米账号登录密码
+     *
+     * 如果提示登录失败，请使用 passToken 登录
+     */
     password: process.env.MI_PASSWORD,
+    /**
+     * （可选）小米账号 passToken
+     *
+     * 获取教程：https://github.com/idootop/migpt-next/issues/4
+     */
     passToken: process.env.MI_PASSTOKEN,
   },
   openai: {
+    /**
+     * 你的大模型服务提供商的接口地址
+     *
+     * 支持兼容 OpenAI 接口的大模型服务，比如：DeepSeek V3 等
+     *
+     * 注意：一般以 /v1 结尾，不包含 /chat/completions 部分
+     * - ✅ https://api.openai.com/v1
+     * - ❌ https://api.openai.com/v1/（最后多了一个 /
+     * - ❌ https://api.openai.com/v1/chat/completions（不需要加 /chat/completions）
+     */
     baseURL: process.env.OPENAI_BASE_URL || "https://token.sensenova.cn/v1",
+    /**
+     * API 密钥
+     */
     apiKey: process.env.OPENAI_API_KEY,
+    /**
+     * 模型名称
+     */
     model: process.env.OPENAI_MODEL || "deepseek-v4-flash",
   },
   prompt: {
+    /**
+     * 系统提示词，如需关闭可设置为：''（空字符串）
+     */
     system: '你是一个智能助手，请根据用户的问题给出回答。',
   },
   context: {
+    /**
+     * 每次对话携带的最大历史消息数（如需关闭可设置为：0）
+     */
     historyMaxLength: 10,
   },
-  // 扩大关键词范围，确保日常提问也能触发 AI
-  callAIKeywords: ['请', '你', '搜', '查', '帮', '测试', '为什么', '是什么', '多少'],
-  
-  async onMessage(engine, msg) {
-    // 1. 无论是否处理，先打印日志，让你明确知道程序听到了你说话
-    console.log(`🎤 [收到语音] : "${msg.text}"`);
-
-    // 2. 检查是否命中 AI 关键词
-    const shouldAskAI = engine.config.callAIKeywords.some((keyword) => msg.text.startsWith(keyword));
-    
-    if (shouldAskAI) {
-      console.log(`🤖 [触发 AI] 正在请求大模型...`);
-      try {
-        // 尝试打断小爱原有的回复 (失败也不影响后续流程)
-        await engine.speaker.abortXiaoAI().catch(() => {});
-        
-        // 获取 AI 回复
-        const aiResponse = await engine.askAI(msg);
-        console.log(`🔊 [准备播报] : ${aiResponse.text}`);
-        
-        // 强制播放文字 (针对 Play 增强版的兼容写法)
-        await engine.speaker.play({ text: aiResponse.text });
-        
-        // 告诉引擎：这条消息我已处理，不要让小爱再重复回答
-        return { handled: true };
-        
-      } catch (error) {
-        console.error("❌ [AI 处理异常]:", error.message);
-        return { handled: true };
-      }
+  /**
+   * 只回答以下关键词开头的消息：
+   *
+   * - 请问地球为什么是圆的？
+   * - 你知道世界上跑的最快的动物是什么吗？
+   */
+  callAIKeywords: ['请', '你'],
+  /**
+   * 自定义消息回复
+   */
+  async onMessage(engine, { text }) {
+    if (text === '测试播放文字') {
+      return { text: '你好，很高兴认识你！' };
     }
-    
-    // 如果没有命中关键词（比如“打开空调”），不拦截，让小爱自己处理
+
+    if (text === '测试播放音乐') {
+      return { url: 'https://example.com/hello.mp3' };
+    }
+
+    if (text === '测试其他能力') {
+      // 打断原来小爱的回复
+      await engine.speaker.abortXiaoAI();
+
+      // 播放文字
+      await engine.speaker.play({ text: '你好' });
+
+      // 播放音频链接
+      await engine.speaker.play({ url: 'https://example.com/hello.mp3' });
+
+      // 调用 MiNA 的能力
+      await engine.MiNA.setVolume(50); // 音量调到 50%
+
+      // 调用 MioT 的能力（请到 https://home.miot-spec.com 查询指令列表）
+      await engine.MiOT.doAction(2, 1, 50); // 音量调到 50%
+
+      // 告诉 MiGPT 已经处理过这条消息了，不再使用默认的 AI 回复
+      return { handled: true };
+    }
   },
 };
