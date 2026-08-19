@@ -15,13 +15,13 @@ export default {
      *
      * 注意：不是手机号或邮箱，请在小米账号「个人信息」-「小米 ID」查看
      */
-    userId: '1430167450',
+    userId: process.env.MI_USER_ID,
     /**
      * 小米账号登录密码
      *
      * 如果提示登录失败，请使用 passToken 登录
      */
-    password: 'zjf942ljj',
+    password: process.env.MI_PASSWORD,
     /**
      * （可选）小米账号 passToken
      *
@@ -40,15 +40,15 @@ export default {
      * - ❌ https://api.openai.com/v1/（最后多了一个 /
      * - ❌ https://api.openai.com/v1/chat/completions（不需要加 /chat/completions）
      */
-    baseURL: 'https://token.sensenova.cn/v1',
+    baseURL: process.env.OPENAI_BASE_URL || "https://token.sensenova.cn/v1",
     /**
      * API 密钥
      */
-    apiKey: 'sk-llMNPRTuZK7Ft13kcpK7UavL1CwwwgGK',
+    apiKey: process.env.OPENAI_API_KEY,
     /**
      * 模型名称
      */
-    model: 'deepseek-v4-flash',
+    model: process.env.OPENAI_MODEL || "deepseek-v4-flash",
   },
   prompt: {
     /**
