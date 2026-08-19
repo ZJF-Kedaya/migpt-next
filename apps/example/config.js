@@ -25,10 +25,16 @@ export default {
   async onMessage(engine, msg) {
     console.log(`🎤 [收到语音]: "${msg.text}"`);
 
-    // 1. 优先处理硬编码测试，用于验证 TTS 通道是否畅通
+    // 1. 专属测试指令：用于验证 L05C 的 MIoT TTS 通道是否彻底打通
     if (msg.text === '测试播放文字') {
-      console.log("🔊 [测试 TTS] 尝试播放固定文本...");
-      await engine.speaker.play({ text: '你好，很高兴认识你！' }).catch(() => {});
+      console.log("🔊 [测试 TTS] 尝试使用 MIoT 底层指令播放...");
+      try {
+        // L05C 正确的 TTS 指令: SIID 5, AIID 3 (play-text)
+        await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！');
+        console.log("✅ TTS 指令发送成功");
+      } catch (e) {
+        console.error("❌ TTS 指令失败:", e.message);
+      }
       return { handled: true };
     }
 
@@ -37,24 +43,19 @@ export default {
     if (shouldAskAI) {
       console.log(`🤖 [触发 AI] 正在请求大模型...`);
       try {
-        // 2. 【第一次打断】在请求大模型前，立即尝试掐断小爱的初始反应
-        await engine.speaker.abortXiaoAI().catch(() => {});
+        // 2. 【第一次底层打断】立即强制停止当前播放 (SIID 3, AIID 4: stop)，掐断小爱的初始反应
+        await engine.MiOT.doAction(3, 4).catch(() => {});
         
-        // 3. 请求大模型 (这里会有 2-4 秒的延迟)
+        // 3. 请求大模型 (这里会有 2-4 秒的网络延迟)
         const { text: aiText } = await engine.askAI(msg);
         console.log(`🔊 [AI 生成回复]: ${aiText}`);
         
-        // 4. 【第二次打断】在拿到 AI 结果后、播放前，再次尝试打断 (防止小爱在这几秒内开始播放兜底回复)
-        await engine.speaker.abortXiaoAI().catch(() => {});
+        // 4. 【第二次底层打断】防止在等待 AI 期间，小爱开始了兜底回复
+        await engine.MiOT.doAction(3, 4).catch(() => {});
         
-        // 5. 【双通道播放】优先使用封装好的 play 方法，如果失败则降级使用底层 MiOT 指令
-        try {
-          await engine.speaker.play({ text: aiText });
-        } catch (playError) {
-          console.log("⚠️ speaker.play 失败，尝试 MiOT.doAction 兜底...");
-          // siid: 5 (TextToSpeech), aiid: 1 (Play)
-          await engine.MiOT.doAction(5, 1, aiText);
-        }
+        // 5. 【核心修复】使用 L05C 专属的 TTS 指令播放 AI 文本 (SIID 5, AIID 3: play-text)
+        await engine.MiOT.doAction(5, 3, aiText);
+        console.log("✅ AI 语音播放指令已发送");
         
         // 6. 标记为已处理，阻止后续默认流程
         return { handled: true };
