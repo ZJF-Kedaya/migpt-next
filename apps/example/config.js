@@ -20,44 +20,43 @@ export default {
   context: {
     historyMaxLength: 10,
   },
+  // 保持关键词触发
   callAIKeywords: ['请', '你', '搜', '查', '帮', '测试', '为什么', '是什么', '多少'],
   
   async onMessage(engine, msg) {
     console.log(`🎤 [收到语音]: "${msg.text}"`);
 
-    // 1. 专属测试指令
     if (msg.text === '测试播放文字') {
-      console.log("🔊 [测试 TTS] 尝试使用 MIoT 底层指令播放...");
-      try {
-        await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！');
-        console.log("✅ TTS 指令发送成功");
-      } catch (e) {
-        console.error("❌ TTS 指令失败:", e.message);
-      }
+      await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！').catch(() => {});
       return { handled: true };
     }
 
     const shouldAskAI = engine.config.callAIKeywords.some((keyword) => msg.text.startsWith(keyword));
     
     if (shouldAskAI) {
-      console.log(`🤖 [触发 AI] 正在请求大模型...`);
+      console.log(`🤖 [触发 AI] 启动极限打断模式...`);
       try {
-        // 2. 【立刻打断】强制停止当前任何播放，防止小爱抢答兜底回复 (SIID 3, AIID 4: stop)
-        await engine.MiOT.doAction(3, 4).catch(() => {});
+        // 🚨 【极限并发打断】不等待结果，以最快速度同时发送所有停止指令，试图清空播放队列
+        engine.MiOT.doAction(3, 4).catch(() => {}); // stop (停止播放)
+        engine.MiOT.doAction(3, 3).catch(() => {}); // pause (暂停)
+        engine.speaker.abortXiaoAI().catch(() => {}); // 官方中断接口
         
-        // 3. 【抢占通道 + 体验优化】立刻播放“请稍等”，掩盖大模型延迟，并彻底占用音频通道
+        // 延迟 150ms，给上述指令一点网络传输时间，然后再次发送 stop 确保队列被清空
+        await new Promise(resolve => setTimeout(resolve, 150));
+        await engine.MiOT.doAction(3, 4).catch(() => {});
+
+        // 🚨 【立即抢占通道】队列清空后，立刻下发“请稍等”，此时它应该能排在最前面
         console.log("⏳ [抢占通道] 播放请稍候提示...");
         await engine.MiOT.doAction(5, 3, "请稍等，我正在思考");
         
-        // 4. 请求大模型 (此时音箱正在说“请稍等”，用户不会觉得卡顿，小爱也不会抢答)
+        // 请求大模型 (此时音箱正在说“请稍等”，掩盖延迟)
         const { text: aiText } = await engine.askAI(msg);
         console.log(`🔊 [AI 生成回复]: ${aiText}`);
         
-        // 5. 【播放最终结果】直接衔接播放 AI 的回复
+        // 播放最终结果
         await engine.MiOT.doAction(5, 3, aiText);
         console.log("✅ AI 语音播放指令已发送");
         
-        // 6. 标记为已处理，阻止后续默认流程
         return { handled: true };
         
       } catch (error) {
