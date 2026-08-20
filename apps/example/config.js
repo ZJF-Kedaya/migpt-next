@@ -25,7 +25,6 @@ export default {
   async onMessage(engine, msg) {
     console.log(`🎤 [收到语音]: "${msg.text}"`);
 
-    // 专属测试指令
     if (msg.text === '测试播放文字') {
       await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！').catch(() => {});
       return { handled: true };
@@ -34,22 +33,34 @@ export default {
     const shouldAskAI = engine.config.callAIKeywords.some((keyword) => msg.text.startsWith(keyword));
     
     if (shouldAskAI) {
-      console.log(`🤖 [触发 AI] 正在请求大模型 (小爱可能会先抢答半句，这是正常现象)...`);
-      try {
-        // 1. 直接请求大模型 (不再发送任何无效的 stop 指令，防止搞坏音频通道)
-        const { text: aiText } = await engine.askAI(msg);
-        console.log(`🔊 [AI 生成回复]: ${aiText}`);
-        
-        // 2. 直接播放 AI 结果 (小爱先说的“不知道”正好充当了缓冲，掩盖了这几秒的延迟)
-        await engine.MiOT.doAction(5, 3, aiText);
-        console.log("✅ AI 语音播放指令已发送");
-        
-        return { handled: true };
-        
-      } catch (error) {
-        console.error(" [AI 处理失败]:", error.message);
-        return { handled: true };
-      }
+      console.log(`🤖 [触发 AI] 启动非阻塞抢占模式...`);
+      
+      //  核心技巧 1：火后即忘 (Fire-and-Forget)
+      // 不等待结果，瞬间发出停止和“请稍等”指令，试图抢占播放队列
+      engine.speaker.abortXiaoAI().catch(() => {});
+      engine.MiOT.doAction(5, 3, "请稍等，我正在思考").catch(() => {});
+      
+      // 🚨 核心技巧 2：非阻塞后台处理
+      // 立即启动一个异步任务去请求大模型，不阻塞 onMessage 的返回
+      const aiTask = (async () => {
+        try {
+          // 在后台安静地请求大模型 (耗时 2-4 秒)
+          const { text: aiText } = await engine.askAI(msg);
+          console.log(`🔊 [AI 生成回复]: ${aiText}`);
+          
+          // 🚨 核心技巧 3：延迟播放，避免队列冲突
+          // 等待“请稍等”播放完毕 (约 1.5 秒)，再发送 AI 结果，确保两者不互相覆盖
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          await engine.MiOT.doAction(5, 3, aiText);
+          console.log("✅ AI 语音播放指令已发送");
+        } catch (error) {
+          console.error("❌ [AI 处理失败]:", error.message);
+        }
+      })();
+      
+      // 🚨 核心技巧 4：瞬间返回
+      // 立刻告诉 MiGPT 引擎这条消息已接管，防止引擎进行默认处理
+      return { handled: true }; 
     }
   },
 };
