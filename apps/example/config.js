@@ -15,7 +15,8 @@ export default {
     model: process.env.OPENAI_MODEL || "deepseek-v4-flash",
   },
   prompt: {
-    system: '你是一个智能助手，请根据用户的问题给出回答。',
+    // 🚨 核心修改：让大模型自己在回复开头加上过渡语，化零为整
+    system: '你是一个智能助手。在回答任何问题之前，请先简短地说一句“请稍等，我正在思考”，然后换行给出你的正式回答。',
   },
   context: {
     historyMaxLength: 10,
@@ -25,7 +26,6 @@ export default {
   async onMessage(engine, msg) {
     console.log(`🎤 [收到语音]: "${msg.text}"`);
 
-    // 专属测试指令
     if (msg.text === '测试播放文字') {
       await engine.MiOT.doAction(5, 3, '你好，大模型测试成功！').catch(() => {});
       return { handled: true };
@@ -34,18 +34,19 @@ export default {
     const shouldAskAI = engine.config.callAIKeywords.some((keyword) => msg.text.startsWith(keyword));
     
     if (shouldAskAI) {
-      console.log(`🤖 [触发 AI] 正在请求大模型 (本地语音可能会先抢答半句，这是云端API的物理限制)...`);
+      console.log(`🤖 [触发 AI] 正在请求大模型...`);
       try {
-        // 1. 直接请求大模型 (不尝试拦截，避免指令冲突导致播放失败)
+        // 1. 尽人事：瞬间发送双重打断指令，试图压制本地语音（能压制多少是多少）
+        engine.speaker.abortXiaoAI().catch(() => {});
+        engine.MiOT.doAction(3, 4).catch(() => {}); // stop
+
+        // 2. 等待大模型返回完整结果（包含“请稍等...”和正式答案）
         const { text: aiText } = await engine.askAI(msg);
-        console.log(`🔊 [AI 生成回复]: ${aiText}`);
+        console.log(`🔊 [AI 完整回复]: ${aiText}`);
         
-        // 2. 延迟 1000ms (1秒) 播放
-        // 目的：让本地语音（“这个我还不知道”）先播放完毕，清空音频队列，
-        // 确保 AI 的回复不会和本地语音重叠，从而 100% 清晰播放。
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // 3. 播放 AI 结果
+        // 3. 🚨 核心技巧：只发送一次 TTS 指令！
+        // 因为这是一个完整的长句，一旦下发，优先级极高，会流畅地完整播放，
+        // 完美掩盖之前可能存在的半句本地语音，且不会出现奇怪的停顿。
         await engine.MiOT.doAction(5, 3, aiText);
         console.log("✅ AI 语音播放指令已发送");
         
